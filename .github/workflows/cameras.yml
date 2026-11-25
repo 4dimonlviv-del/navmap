@@ -1,5 +1,5 @@
-# Камери контролю швидкості для NavLogger: раз на тиждень беремо свіжу Україну з Geofabrik (OpenStreetMap),
-# виймаємо камери і кладемо cameras.csv у корінь репозиторію (застосунок качає його звідси, коли змінився).
+# Камери контролю швидкості для NavLogger: раз на тиждень беремо з OpenStreetMap (Overpass API; запасний шлях --
+# повна Україна з Geofabrik) камери і кладемо cameras.csv у корінь репозиторію (застосунок качає його звідси, коли змінився).
 name: cameras
 on:
   schedule:
@@ -15,14 +15,25 @@ jobs:
       - uses: actions/checkout@v4
       - name: Інструменти
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q osmium-tool
+          sudo apt-get update -q && sudo apt-get install -y -q osmium-tool || true
           pip install osmium
-      - name: Україна з Geofabrik
-        run: curl -fsSL --retry 3 -o ua.osm.pbf https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
-      - name: Вийняти камери
+      - name: Камери з OSM (Overpass; запасний -- Geofabrik)
         run: |
-          osmium tags-filter ua.osm.pbf n/highway=speed_camera r/type=enforcement -o cam.osm.pbf --overwrite
-          python3 tools/cameras.py cam.osm.pbf cameras.csv
+          Q='[out:xml][timeout:300];area["ISO3166-1"="UA"][admin_level=2]->.a;(node["highway"="speed_camera"](area.a);relation["type"="enforcement"]["enforcement"="maxspeed"](area.a););(._;>;);out meta;'
+          ok=0
+          for u in https://overpass-api.de/api/interpreter https://overpass.private.coffee/api/interpreter https://maps.mail.ru/osm/tools/overpass/api/interpreter; do
+            if curl -fsS --retry 2 --max-time 400 --data-urlencode "data=$Q" -o cam.osm "$u" && grep -q "<osm" cam.osm && ! grep -q "<remark>" cam.osm; then
+              echo "Overpass: $u"; ok=1; break
+            fi
+            echo "не вдалось: $u"
+          done
+          if [ $ok = 0 ]; then
+            curl -fsSL --retry 3 --retry-connrefused -o ua.osm.pbf https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+            osmium tags-filter ua.osm.pbf n/highway=speed_camera r/type=enforcement -o cam.osm.pbf --overwrite
+            python3 tools/cameras.py cam.osm.pbf cameras.csv
+          else
+            python3 tools/cameras.py cam.osm cameras.csv
+          fi
       - name: Зберегти, якщо змінилось
         run: |
           # перший рядок -- дата; порівнюємо без нього, щоб не робити коміт щотижня без змін

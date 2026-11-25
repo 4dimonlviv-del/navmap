@@ -1,0 +1,36 @@
+# Камери контролю швидкості для NavLogger: раз на тиждень беремо свіжу Україну з Geofabrik (OpenStreetMap),
+# виймаємо камери і кладемо cameras.csv у корінь репозиторію (застосунок качає його звідси, коли змінився).
+name: cameras
+on:
+  schedule:
+    - cron: "37 2 * * 1"        # понеділок, 02:37 UTC
+  workflow_dispatch: {}          # або вручну: Actions → cameras → Run workflow
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Інструменти
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q osmium-tool
+          pip install osmium
+      - name: Україна з Geofabrik
+        run: curl -fsSL --retry 3 -o ua.osm.pbf https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+      - name: Вийняти камери
+        run: |
+          osmium tags-filter ua.osm.pbf n/highway=speed_camera r/type=enforcement -o cam.osm.pbf --overwrite
+          python3 tools/cameras.py cam.osm.pbf cameras.csv
+      - name: Зберегти, якщо змінилось
+        run: |
+          # перший рядок -- дата; порівнюємо без нього, щоб не робити коміт щотижня без змін
+          if git cat-file -e HEAD:cameras.csv 2>/dev/null && diff -q <(git show HEAD:cameras.csv | tail -n +2) <(tail -n +2 cameras.csv) >/dev/null; then
+            echo "камери без змін"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cameras.csv
+          git commit -m "камери: $(head -1 cameras.csv | sed 's/^# //')"
+          git push

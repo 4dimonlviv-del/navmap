@@ -21,7 +21,7 @@ jobs:
         run: |
           Q='[out:xml][timeout:300];area["ISO3166-1"="UA"][admin_level=2]->.a;(node["highway"="speed_camera"](area.a);relation["type"="enforcement"]["enforcement"="maxspeed"](area.a););(._;>;);out meta;'
           ok=0
-          for u in https://overpass-api.de/api/interpreter https://overpass.private.coffee/api/interpreter https://maps.mail.ru/osm/tools/overpass/api/interpreter; do
+          for u in https://overpass.kumi.systems/api/interpreter https://overpass-api.de/api/interpreter https://overpass.private.coffee/api/interpreter; do
             if curl -fsS --retry 2 --max-time 400 --data-urlencode "data=$Q" -o cam.osm "$u" && grep -q "<osm" cam.osm && ! grep -q "<remark>" cam.osm; then
               echo "Overpass: $u"; ok=1; break
             fi

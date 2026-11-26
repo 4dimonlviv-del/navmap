@@ -18,6 +18,7 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q osmium-tool || true
           pip install osmium
       - name: Камери з OSM (Overpass; запасний -- Geofabrik)
+        continue-on-error: true      # Overpass інколи віддає порожньо -- тоді лишається попередній cameras.csv, а пости все одно оновлюються
         run: |
           Q='[out:xml][timeout:300];area["ISO3166-1"="UA"][admin_level=2]->.a;(node["highway"="speed_camera"](area.a);relation["type"="enforcement"]["enforcement"="maxspeed"](area.a););(._;>;);out meta;'
           ok=0

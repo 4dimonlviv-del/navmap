@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
-"""Стаціонарні пости поліції з OSM (відповідь Overpass у JSON) -> posts.csv (lat,lon,kind,osm_id,name).
-Беремо лише те, що вже позначено на карті OpenStreetMap:
- - amenity=police з police=checkpoint або police=traffic_police;
- - amenity=police, у назві якого «пост»/«ДАІ»/«ДПС»/«КПП».
+"""Стаціонарні пости поліції з OSM (відповідь Overpass у JSON) -> posts.csv у форматі бази камер застосунку:
+lat,lon,-1,,id,назва  (-1 у полі обмеження = «пост поліції», id від'ємний, щоб не збігся з камерами).
+Беремо amenity=police з police=traffic_police або з назвою поста ДАІ/ДПС/патрульної поліції.
+НЕ беремо (ст. 114-2 КК: жодних блокпостів/КПП/військових чи прикордонних об'єктів): police=checkpoint, назви з
+«блок», «КПП», «кордон», «військ», «ЗСУ», «митн». Також без контор і будівель (управління, відділ, МРЕВ, ТСЦ, полк...).
 """
 import json, re, sys, datetime
 d = json.load(open(sys.argv[1], encoding='utf-8'))
+INC = re.compile(r'пост|ДАІ|ДАI|ДАИ|ГАИ|ДПС|патрульн', re.I)
+EXC = re.compile(r'блок|КПП|кордон|військ|ЗСУ|митн|checkpoint|управлін|управлен|відділ|отдел|МРЕВ|ТСЦ|сервісн|батальйон|батальон|полк|район|міськ|муніц|охорон|відділен|департамент|академ|училищ|штаб', re.I)
+TYPE = {'n': 1, 'w': 2, 'r': 3}
 rows = []
 for e in d.get('elements', []):
     t = e.get('tags', {})
     if t.get('amenity') != 'police': continue
-    name = (t.get('name') or t.get('name:uk') or '').replace(',', ' ').strip()
     kind = t.get('police', '')
-    if not (kind in ('checkpoint', 'traffic_police') or re.search(r'пост|ДАІ|ДАI|ДПС|КПП', name, re.I)): continue
+    if kind == 'checkpoint' or t.get('military') or t.get('barrier') == 'border_control': continue
+    name = (t.get('name') or t.get('name:uk') or '').replace(',', ' ').strip()
+    if not (kind == 'traffic_police' or INC.search(name)): continue
+    if EXC.search(name): continue
     la = e.get('lat') or (e.get('center') or {}).get('lat'); lo = e.get('lon') or (e.get('center') or {}).get('lon')
     if la is None or lo is None: continue
-    rows.append((la, lo, kind or 'name', '%s%d' % (e['type'][0], e['id']), name))
+    rows.append((la, lo, -(e['id'] * 10 + TYPE.get(e['type'][0], 0)), name))
 rows.sort()
 with open(sys.argv[2], 'w', encoding='utf-8', newline='\n') as f:
     f.write('# стаціонарні пости поліції з OpenStreetMap (© учасники OpenStreetMap, ODbL); %s; %d шт.\n' % (datetime.date.today().isoformat(), len(rows)))
-    f.write('lat,lon,kind,osm_id,name\n')
-    for r in rows: f.write('%.6f,%.6f,%s,%s,%s\n' % r)
+    f.write('lat,lon,maxspeed,dir,osm_id,name\n')
+    for r in rows: f.write('%.6f,%.6f,-1,,%d,%s\n' % r)
 print('постів: %d' % len(rows))
+for r in rows: print('%.5f,%.5f %s' % (r[0], r[1], r[3]))
